@@ -1,327 +1,404 @@
-import { useEffect } from "react";
-import { useFetcher } from "react-router";
-import { useAppBridge } from "@shopify/app-bridge-react";
-import { boundary } from "@shopify/shopify-app-react-router/server";
+import { data, useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
+import { boundary } from "@shopify/shopify-app-react-router/server";
+import { useEffect, useState } from "react";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer} from "recharts";
 
+function ClientOnly({ children }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  if (!mounted) return null;
+  return children;
+}
+
+// ─── LOADER ───────────────────────────────────────────────────────────────────
 export const loader = async ({ request }) => {
-  await authenticate.admin(request);
-
-  return null;
-};
-
-export const action = async ({ request }) => {
   const { admin } = await authenticate.admin(request);
-  const color = ["Red", "Orange", "Yellow", "Green"][
-    Math.floor(Math.random() * 4)
-  ];
-  const response = await admin.graphql(
-    `#graphql
-      mutation populateProduct($product: ProductCreateInput!) {
-        productCreate(product: $product) {
-          product {
-            id
-            title
-            handle
-            status
-            variants(first: 10) {
-              edges {
-                node {
-                  id
-                  price
-                  barcode
-                  createdAt
+
+  const now = new Date();
+
+  const todayStart = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate()
+  ).toISOString();
+
+  const yesterdayStart = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() - 1
+  ).toISOString();
+
+  const sevenDaysAgo = new Date(
+    Date.now() - 7 * 24 * 60 * 60 * 1000
+  ).toISOString();
+
+  const prevSevenDaysAgo = new Date(
+    Date.now() - 14 * 24 * 60 * 60 * 1000
+  ).toISOString();
+
+  try {
+    // ── Fetch all orders (last 60 days, no read_all_orders needed) ──
+    const [weekRes, prevWeekRes, recentRes] = await Promise.all([
+      admin.graphql(`
+        query WeekOrders {
+          orders(
+            first: 250
+            query: "created_at:>=${sevenDaysAgo}"
+            sortKey: CREATED_AT
+            reverse: true
+          ) {
+            edges {
+              node {
+                name
+                createdAt
+                displayFinancialStatus
+                displayFulfillmentStatus
+                totalPriceSet { shopMoney { amount currencyCode } }
+                customer { id firstName lastName }
+                lineItems(first: 10) {
+                  edges { node { title quantity } }
                 }
               }
             }
-            demoInfo: metafield(namespace: "$app", key: "demo_info") {
-              jsonValue
+          }
+        }
+      `),
+
+      admin.graphql(`
+        query PrevWeekOrders {
+          orders(
+            first: 250
+            query: "created_at:>=${prevSevenDaysAgo} created_at:<${sevenDaysAgo}"
+          ) {
+            edges {
+              node {
+                totalPriceSet { shopMoney { amount } }
+                customer { id }
+              }
             }
           }
         }
-      }`,
-    {
-      variables: {
-        product: {
-          title: `${color} Snowboard`,
-          metafields: [
-            {
-              namespace: "$app",
-              key: "demo_info",
-              value: "Created by React Router Template",
-            },
-          ],
-        },
-      },
-    },
-  );
-  const responseJson = await response.json();
-  const product = responseJson.data.productCreate.product;
-  const variantId = product.variants.edges[0].node.id;
-  const variantResponse = await admin.graphql(
-    `#graphql
-    mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-        productVariants {
-          id
-          price
-          barcode
-          createdAt
-        }
-      }
-    }`,
-    {
-      variables: {
-        productId: product.id,
-        variants: [{ id: variantId, price: "100.00" }],
-      },
-    },
-  );
-  const variantResponseJson = await variantResponse.json();
-  const metaobjectResponse = await admin.graphql(
-    `#graphql
-    mutation shopifyReactRouterTemplateUpsertMetaobject($handle: MetaobjectHandleInput!, $metaobject: MetaobjectUpsertInput!) {
-      metaobjectUpsert(handle: $handle, metaobject: $metaobject) {
-        metaobject {
-          id
-          handle
-          title: field(key: "title") {
-            jsonValue
-          }
-          description: field(key: "description") {
-            jsonValue
-          }
-        }
-        userErrors {
-          field
-          message
-        }
-      }
-    }`,
-    {
-      variables: {
-        handle: {
-          type: "$app:example",
-          handle: "demo-entry",
-        },
-        metaobject: {
-          fields: [
-            { key: "title", value: "Demo Entry" },
-            {
-              key: "description",
-              value:
-                "This metaobject was created by the Shopify app template to demonstrate the metaobject API.",
-            },
-          ],
-        },
-      },
-    },
-  );
-  const metaobjectResponseJson = await metaobjectResponse.json();
+      `),
 
-  return {
-    product: responseJson.data.productCreate.product,
-    variant: variantResponseJson.data.productVariantsBulkUpdate.productVariants,
-    metaobject: metaobjectResponseJson.data.metaobjectUpsert.metaobject,
-  };
+      admin.graphql(`
+        query RecentOrders {
+          orders(first: 5, sortKey: CREATED_AT, reverse: true) {
+            edges {
+              node {
+                name
+                displayFinancialStatus
+                displayFulfillmentStatus
+                totalPriceSet { shopMoney { amount currencyCode } }
+                customer { firstName lastName }
+                createdAt
+              }
+            }
+          }
+          ordersCount { count }
+          unfulfilledCount: ordersCount(
+            query: "fulfillment_status:unfulfilled"
+          ) { count }
+        }
+      `),
+    ]);
+
+    const weekResult = await weekRes.json();
+    const prevWeekResult = await prevWeekRes.json();
+    const recentResult = await recentRes.json();
+
+    // ── Parse data ──
+    const weekList = weekResult.data.orders.edges.map((e) => e.node);
+    const prevWeekList = prevWeekResult.data.orders.edges.map((e) => e.node);
+    const recentOrders = recentResult.data.orders.edges.map((e) => e.node);
+    const totalOrdersCount = recentResult.data.ordersCount.count;
+    const unfulfilledCount = recentResult.data.unfulfilledCount.count;
+
+    const currency =
+      weekList[0]?.totalPriceSet.shopMoney.currencyCode ||
+      recentOrders[0]?.totalPriceSet.shopMoney.currencyCode ||
+      "USD";
+
+    // ── Today & yesterday from week data ──
+    const todayList = weekList.filter(
+      (o) => new Date(o.createdAt) >= new Date(todayStart)
+    );
+    const yesterdayList = weekList.filter((o) => {
+      const d = new Date(o.createdAt);
+      return d >= new Date(yesterdayStart) && d < new Date(todayStart);
+    });
+
+    const todaySales = todayList.reduce(
+      (sum, o) => sum + parseFloat(o.totalPriceSet.shopMoney.amount),
+      0
+    );
+    const yesterdaySales = yesterdayList.reduce(
+      (sum, o) => sum + parseFloat(o.totalPriceSet.shopMoney.amount),
+      0
+    );
+
+    const weeklyRevenue = weekList.reduce(
+      (sum, o) => sum + parseFloat(o.totalPriceSet.shopMoney.amount),
+      0
+    );
+    const prevWeeklyRevenue = prevWeekList.reduce(
+      (sum, o) => sum + parseFloat(o.totalPriceSet.shopMoney.amount),
+      0
+    );
+
+    // ── % change helper ──
+    const pctChange = (current, previous) => {
+      if (previous === 0) return current > 0 ? "+100%" : "0%";
+      const diff = ((current - previous) / previous) * 100;
+      return `${diff >= 0 ? "+" : ""}${diff.toFixed(0)}%`;
+    };
+
+    // ── Sales chart by day ──
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const salesByDay = {};
+    dayNames.forEach((d) => (salesByDay[d] = 0));
+    weekList.forEach((node) => {
+      const day = dayNames[new Date(node.createdAt).getDay()];
+      salesByDay[day] += parseFloat(node.totalPriceSet.shopMoney.amount);
+    });
+    const salesData = dayNames.map((day) => ({
+      day,
+      sales: Math.round(salesByDay[day]),
+    }));
+
+    // ── Best seller ──
+    const productCounts = {};
+    weekList.forEach((node) => {
+      node.lineItems.edges.forEach(({ node: item }) => {
+        productCounts[item.title] =
+          (productCounts[item.title] || 0) + item.quantity;
+      });
+    });
+    const bestSeller =
+      Object.entries(productCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ||
+      "N/A";
+
+    // ── Returning customers ──
+    const thisWeekCustomers = new Set(
+      weekList.filter((o) => o.customer?.id).map((o) => o.customer.id)
+    );
+    const prevWeekCustomers = new Set(
+      prevWeekList.filter((o) => o.customer?.id).map((o) => o.customer.id)
+    );
+    const returningCount = [...thisWeekCustomers].filter((id) =>
+      prevWeekCustomers.has(id)
+    ).length;
+    const returningPct =
+      thisWeekCustomers.size > 0
+        ? Math.round((returningCount / thisWeekCustomers.size) * 100)
+        : 0;
+
+    // ── Format recent orders ──
+    const orders = recentOrders.map((node) => ({
+      id: node.name,
+      customer: node.customer
+        ? `${node.customer.firstName || ""} ${
+            node.customer.lastName || ""
+          }`.trim()
+        : "Guest",
+      total: `${currency} ${parseFloat(
+        node.totalPriceSet.shopMoney.amount
+      ).toFixed(2)}`,
+      fulfillment: node.displayFulfillmentStatus,
+      payment: node.displayFinancialStatus,
+      date: new Date(node.createdAt).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      }),
+    }));
+
+    // ── Stats cards ──
+    const stats = [
+      {
+        label: "Today's Sales",
+        value: `$${todaySales.toFixed(2)}`,
+        change: pctChange(todaySales, yesterdaySales),
+        positive: todaySales >= yesterdaySales,
+      },
+      {
+        label: "Today's Orders",
+        value: `${todayList.length}`,
+        change: pctChange(todayList.length, yesterdayList.length),
+        positive: todayList.length >= yesterdayList.length,
+      },
+      {
+        label: "Total Orders",
+        value: totalOrdersCount.toLocaleString(),
+        change: "",
+        positive: true,
+      },
+      {
+        label: "Weekly Revenue",
+        value: `$${weeklyRevenue.toFixed(2)}`,
+        change: pctChange(weeklyRevenue, prevWeeklyRevenue),
+        positive: weeklyRevenue >= prevWeeklyRevenue,
+      },
+    ];
+
+    return data({
+      stats,
+      salesData,
+      recentOrders: orders,
+      insights: {
+        bestSeller,
+        pendingOrders: unfulfilledCount,
+        returningPct,
+        weeklyRevenue: `$${weeklyRevenue.toFixed(2)}`,
+      },
+      currency,
+      error: null,
+    });
+  } catch (err) {
+    console.error("Dashboard loader error:", err.message);
+
+    return data({
+      stats: [
+        { label: "Today's Sales", value: "$0.00", change: "0%", positive: true },
+        { label: "Today's Orders", value: "0", change: "0%", positive: true },
+        { label: "Total Orders", value: "0", change: "", positive: true },
+        { label: "Weekly Revenue", value: "$0.00", change: "0%", positive: true },
+      ],
+      salesData: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(
+        (day) => ({ day, sales: 0 })
+      ),
+      recentOrders: [],
+      insights: {
+        bestSeller: "N/A",
+        pendingOrders: 0,
+        returningPct: 0,
+        weeklyRevenue: "$0.00",
+      },
+      currency: "USD",
+      error: err.message || "Failed to load dashboard data.",
+    });
+  }
 };
 
+// ─── COMPONENT ────────────────────────────────────────────────────────────────
 export default function Index() {
-  const fetcher = useFetcher();
-  const shopify = useAppBridge();
-  const isLoading =
-    ["loading", "submitting"].includes(fetcher.state) &&
-    fetcher.formMethod === "POST";
-
-  useEffect(() => {
-    if (fetcher.data?.product?.id) {
-      shopify.toast.show("Product created");
-    }
-  }, [fetcher.data?.product?.id, shopify]);
-  const generateProduct = () => fetcher.submit({}, { method: "POST" });
+  const { stats, salesData, recentOrders, insights, error } = useLoaderData();
+  const supportUrl = "https://talentpro.global/contact-us/";
 
   return (
-    <s-page heading="Shopify app template">
-      <s-button slot="primary-action" onClick={generateProduct}>
-        Generate a product
+    <s-page heading="TalentPro Dashboard">
+      {/* Support Button */}
+      <s-button
+        slot="secondary-actions"
+        href={supportUrl}
+        target="_blank"
+        variant="secondary"
+      >
+        Get Support
       </s-button>
 
-      <s-section heading="Congrats on creating a new Shopify app 🎉">
-        <s-paragraph>
-          This embedded app template uses{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/tools/app-bridge"
-            target="_blank"
-          >
-            App Bridge
-          </s-link>{" "}
-          interface examples like an{" "}
-          <s-link href="/app/additional">additional page in the app nav</s-link>
-          , as well as an{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            Admin GraphQL
-          </s-link>{" "}
-          mutation demo, to provide a starting point for app development.
-        </s-paragraph>
+      {/* Welcome */}
+      <s-section>
+        <s-heading level="2">Welcome back 👋</s-heading>
+        <s-text variant="subdued">
+          Here's your live store performance overview.
+        </s-text>
       </s-section>
-      <s-section heading="Get started with products">
-        <s-paragraph>
-          Generate a product with GraphQL and get the JSON output for that
-          product. Learn more about the{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql/latest/mutations/productCreate"
-            target="_blank"
-          >
-            productCreate
-          </s-link>{" "}
-          mutation in our API references. Includes a product{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/build/custom-data/metafields"
-            target="_blank"
-          >
-            metafield
-          </s-link>{" "}
-          and{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/build/custom-data/metaobjects"
-            target="_blank"
-          >
-            metaobject
-          </s-link>
-          .
-        </s-paragraph>
-        <s-stack direction="inline" gap="base">
-          <s-button
-            onClick={generateProduct}
-            {...(isLoading ? { loading: true } : {})}
-          >
-            Generate a product
-          </s-button>
-          {fetcher.data?.product && (
-            <s-button
-              onClick={() => {
-                shopify.intents.invoke?.("edit:shopify/Product", {
-                  value: fetcher.data?.product?.id,
-                });
-              }}
-              target="_blank"
-              variant="tertiary"
-            >
-              Edit product
-            </s-button>
-          )}
-        </s-stack>
-        {fetcher.data?.product && (
-          <s-section heading="productCreate mutation">
+
+      {/* Error Banner */}
+      {error && (
+        <s-section>
+          <s-banner tone="warning">
+            ⚠️ {error}
+          </s-banner>
+        </s-section>
+      )}
+
+      <s-grid gridTemplateColumns="repeat(12, 1fr)" gap="base">
+        {/* Stats Cards */}
+        {stats.map((stat) => (
+          <s-grid-item key={stat.label} gridColumn="span 3">
+            <s-section>
+              <s-text variant="subdued">{stat.label}</s-text>
+              <s-heading level="1">{stat.value}</s-heading>
+              {stat.change && (
+                <s-text tone={stat.positive ? "success" : "critical"}>
+                  {stat.change}
+                </s-text>
+              )}
+            </s-section>
+          </s-grid-item>
+        ))}
+
+        {/* Sales Chart */}
+        <s-grid-item gridColumn="span 8">
+          <s-section heading="Sales Overview (Last 7 Days)">
+            <div style={{ height: 128, width: "100%" }}>
+              <ClientOnly>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={salesData}>
+                    <XAxis dataKey="day" />
+                    <YAxis />
+                    <Tooltip formatter={(value) => [`$${value}`, "Sales"]}/>
+                    <Line type="monotone" dataKey="sales" stroke="#008060" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }}/>
+                  </LineChart>
+                </ResponsiveContainer>
+              </ClientOnly>
+            </div>
+          </s-section>
+        </s-grid-item>
+
+        {/* Quick Insights */}
+        <s-grid-item gridColumn="span 4">
+          <s-section heading="Quick Insights">
             <s-stack direction="block" gap="base">
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.product, null, 2)}</code>
-                </pre>
-              </s-box>
-
-              <s-heading>productVariantsBulkUpdate mutation</s-heading>
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>{JSON.stringify(fetcher.data.variant, null, 2)}</code>
-                </pre>
-              </s-box>
-
-              <s-heading>metaobjectUpsert mutation</s-heading>
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre style={{ margin: 0 }}>
-                  <code>
-                    {JSON.stringify(fetcher.data.metaobject, null, 2)}
-                  </code>
-                </pre>
-              </s-box>
+              <s-text>🔥 Best Seller: {insights.bestSeller}</s-text>
+              <s-text>📦 Unfulfilled Orders: {insights.pendingOrders}</s-text>
+              <s-text>⭐ Returning Customers: {insights.returningPct}%</s-text>
+              <s-text>💰 Weekly Revenue: {insights.weeklyRevenue}</s-text>
             </s-stack>
           </s-section>
-        )}
-      </s-section>
+        </s-grid-item>
 
-      <s-section slot="aside" heading="App template specs">
-        <s-paragraph>
-          <s-text>Framework: </s-text>
-          <s-link href="https://reactrouter.com/" target="_blank">
-            React Router
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Interface: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/app-home/using-polaris-components"
-            target="_blank"
-          >
-            Polaris web components
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>API: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            GraphQL
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Custom data: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/apps/build/custom-data"
-            target="_blank"
-          >
-            Metafields &amp; metaobjects
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Database: </s-text>
-          <s-link href="https://www.prisma.io/" target="_blank">
-            Prisma
-          </s-link>
-        </s-paragraph>
-      </s-section>
-
-      <s-section slot="aside" heading="Next steps">
-        <s-unordered-list>
-          <s-list-item>
-            Build an{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/getting-started/build-app-example"
-              target="_blank"
-            >
-              example app
-            </s-link>
-          </s-list-item>
-          <s-list-item>
-            Explore Shopify&apos;s API with{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/tools/graphiql-admin-api"
-              target="_blank"
-            >
-              GraphiQL
-            </s-link>
-          </s-list-item>
-        </s-unordered-list>
-      </s-section>
+        {/* Recent Orders */}
+        <s-grid-item gridColumn="span 12">
+          <s-section heading="Recent Orders">
+            <s-stack direction="block" gap="base">
+              {recentOrders.length === 0 ? (
+                <s-text variant="subdued">No orders found.</s-text>
+              ) : (
+                recentOrders.map((order) => (
+                  <div
+                    key={order.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "12px 0",
+                      borderBottom: "1px solid #e1e3e5",
+                    }}
+                  >
+                    <div>
+                      <strong>{order.id}</strong>
+                      <div style={{ color: "#6d7175", fontSize: "14px" }}>
+                        {order.customer}
+                      </div>
+                      <div style={{ color: "#6d7175", fontSize: "12px" }}>
+                        {order.date}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <strong>{order.total}</strong>
+                      <div style={{ color: "#6d7175", fontSize: "12px" }}>
+                        {order.payment}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </s-stack>
+          </s-section>
+        </s-grid-item>
+      </s-grid>
     </s-page>
   );
 }
