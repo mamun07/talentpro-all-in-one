@@ -1,6 +1,6 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
-client_id = "f0543dcb5b2b8fff568f1d75f9696486"
+client_id = "327ddcda14a6d04be4a18de3fbf24371"
 name = "Talentpro"
 application_url = "https://example.com"
 embedded = true
