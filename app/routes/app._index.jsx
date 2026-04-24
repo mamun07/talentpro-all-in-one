@@ -393,6 +393,16 @@ export default function Index() {
             </s-table>
           </s-section>
         </s-grid-item>
+
+
+        <s-grid-item gridColumn="span 12">
+          <s-section>
+            <s-heading level="2">Need help?</s-heading>     
+            <s-text variant="subdued">
+              Visit our <a href={supportUrl} target="_blank" rel="noopener noreferrer">support center</a> for FAQs, guides, and direct assistance.
+            </s-text>
+          </s-section>
+        </s-grid-item>
       </s-grid>
     </s-page>
   );
