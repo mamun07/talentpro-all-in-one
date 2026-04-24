@@ -361,7 +361,7 @@ export default function Index() {
 
         {/* Recent Orders */}
         <s-grid-item gridColumn="span 12">
-          <s-section padding="none" heading="Recent Orders">
+          <s-section heading="Recent Orders">
             <s-table>
               <s-table-header-row>
                 <s-table-header listSlot="primary">No</s-table-header>
