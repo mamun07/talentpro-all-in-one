@@ -365,9 +365,8 @@ export default function Index() {
             <s-table>
               <s-table-header-row>
                 <s-table-header listSlot="primary">No</s-table-header>
-                <s-table-header listSlot="primary">Product</s-table-header>
+                <s-table-header listSlot="primary">Customer</s-table-header>
                 <s-table-header listSlot="inline">Status</s-table-header>
-                <s-table-header listSlot="labeled">Inventory</s-table-header>
                 <s-table-header listSlot="labeled">Price</s-table-header>
               </s-table-header-row>
 
@@ -378,13 +377,12 @@ export default function Index() {
                     recentOrders.map((order) => (
                       <s-table-row key={order.id}>
                         <s-table-cell>{order.id}</s-table-cell>
-                        <s-table-cell>{order.customer}</s-table-cell>   
+                        <s-table-cell>{order.customer}</s-table-cell>
                         <s-table-cell>
                           <s-badge tone={order.fulfillment === "unfulfilled" ? "critical" : "success"}>
                             {order.fulfillment === "unfulfilled" ? "Pending" : "Fulfilled"} 
                           </s-badge>
                         </s-table-cell>
-                        <s-table-cell>128</s-table-cell>
                         <s-table-cell>{order.total}</s-table-cell>
                       </s-table-row>
                     ))
