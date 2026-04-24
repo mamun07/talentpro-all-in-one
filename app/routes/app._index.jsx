@@ -361,41 +361,36 @@ export default function Index() {
 
         {/* Recent Orders */}
         <s-grid-item gridColumn="span 12">
-          <s-section heading="Recent Orders">
-            <s-stack direction="block" gap="base">
-              {recentOrders.length === 0 ? (
-                <s-text variant="subdued">No orders found.</s-text>
-              ) : (
-                recentOrders.map((order) => (
-                  <div
-                    key={order.id}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      padding: "12px 0",
-                      borderBottom: "1px solid #e1e3e5",
-                    }}
-                  >
-                    <div>
-                      <strong>{order.id}</strong>
-                      <div style={{ color: "#6d7175", fontSize: "14px" }}>
-                        {order.customer}
-                      </div>
-                      <div style={{ color: "#6d7175", fontSize: "12px" }}>
-                        {order.date}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <strong>{order.total}</strong>
-                      <div style={{ color: "#6d7175", fontSize: "12px" }}>
-                        {order.payment}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </s-stack>
+          <s-section padding="none" heading="Recent Orders">
+            <s-table>
+              <s-table-header-row>
+                <s-table-header listSlot="primary">No</s-table-header>
+                <s-table-header listSlot="primary">Product</s-table-header>
+                <s-table-header listSlot="inline">Status</s-table-header>
+                <s-table-header listSlot="labeled">Inventory</s-table-header>
+                <s-table-header listSlot="labeled">Price</s-table-header>
+              </s-table-header-row>
+
+              <s-table-body>
+                  {recentOrders.length === 0 ? (
+                    <s-text variant="subdued">No orders found.</s-text>
+                  ) : (
+                    recentOrders.map((order) => (
+                      <s-table-row key={order.id}>
+                        <s-table-cell>{order.id}</s-table-cell>
+                        <s-table-cell>{order.customer}</s-table-cell>   
+                        <s-table-cell>
+                          <s-badge tone={order.fulfillment === "unfulfilled" ? "critical" : "success"}>
+                            {order.fulfillment === "unfulfilled" ? "Pending" : "Fulfilled"} 
+                          </s-badge>
+                        </s-table-cell>
+                        <s-table-cell>128</s-table-cell>
+                        <s-table-cell>{order.total}</s-table-cell>
+                      </s-table-row>
+                    ))
+                  )}
+              </s-table-body>
+            </s-table>
           </s-section>
         </s-grid-item>
       </s-grid>
