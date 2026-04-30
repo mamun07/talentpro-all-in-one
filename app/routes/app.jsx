@@ -16,12 +16,12 @@ export default function App() {
   return (
     <AppProvider embedded apiKey={apiKey}>
       <s-app-nav>
-        <s-link href="/app/bundle">Bundle</s-link>
+        <s-link href="/app/bundle">Product Bundle</s-link>
         <s-link href="/app/upsell-cross-sell">Upsell & Cross sell</s-link>
-        <s-link href="/app/chatbot">Chatbot</s-link>
+        <s-link href="/app/chatbot">AI Chatbot</s-link>
         <s-link href="/app/productreviews">Product Reviews</s-link>
-        <s-link href="/app/loyality">Loyality</s-link>
-        <s-link href="/app/price">Price</s-link>
+        <s-link href="/app/loyalty-and-reward">Loyalty and Reward</s-link>
+        <s-link href="/app/price">Billing System</s-link>
         <s-link href="/app/settings">Settings</s-link>
       </s-app-nav>
       <Outlet />
